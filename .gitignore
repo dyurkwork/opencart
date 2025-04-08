@@ -1,0 +1,41 @@
+# Cache and logs
+/system/storage/cache/*
+/system/storage/logs/*
+!system/storage/cache/index.html
+!system/storage/logs/index.html
+
+# Uploads
+/system/storage/download/*
+/system/storage/upload/*
+!system/storage/download/index.html
+!system/storage/upload/index.html
+
+# Sessions
+/system/storage/session/*
+!system/storage/session/index.html
+
+# Vendor folders (if using composer)
+/vendor/
+
+# Configuration files (contains sensitive data)
+/config.php
+/admin/config.php
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+
+# Node modules (if using any frontend tools)
+/node_modules/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Image cache
+/image/cache/*
+!image/cache/index.html
+
+# Debug files
+debug.log
