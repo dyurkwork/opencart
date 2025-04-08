@@ -1,25 +1,25 @@
 # Cache and logs
-/system/storage/cache/*
-/system/storage/logs/*
-!system/storage/cache/index.html
-!system/storage/logs/index.html
+storage/cache/*
+storage/logs/*
+storage/cache/index.html
+storage/logs/index.html
 
 # Uploads
-/system/storage/download/*
-/system/storage/upload/*
-!system/storage/download/index.html
-!system/storage/upload/index.html
+storage/download/*
+storage/upload/*
+storage/download/index.html
+storage/upload/index.html
 
 # Sessions
-/system/storage/session/*
-!system/storage/session/index.html
+storage/session/*
+storage/session/index.html
 
 # Vendor folders (if using composer)
-/vendor/
+storage/vendor/
 
 # Configuration files (contains sensitive data)
-/config.php
-/admin/config.php
+config.php
+upload/admin/config.php
 
 # IDE files
 .idea/
@@ -27,15 +27,18 @@
 *.swp
 
 # Node modules (if using any frontend tools)
-/node_modules/
+node_modules/
 
 # Temporary files
 *.tmp
 *.temp
 
 # Image cache
-/image/cache/*
-!image/cache/index.html
+upload/image/cache/*
 
 # Debug files
 debug.log
+storage/cache/cache.catalog.language.1744105592
+storage/cache/cache.country.admin.1744104111
+storage/cache/cache.currency.1744105592
+storage/cache/cache.store.1744105597
