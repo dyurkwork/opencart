@@ -2,41 +2,18 @@
 
 // вызываю конроллер через урл http://localhost:8080/admin/index.php?route=extension/module/retailcrm_sync/syncCustomers&user_token=iD9O6edFJgPvvE0JJXMpwwbxcgRSvRMz
 class ControllerExtensionModuleRetailcrmSync extends Controller {
+    private $settings;
+    private $client;
+
+    // Синхронизация клиентов из history
     public function syncCustomers() {
-        // Проверка прав
-        if (!$this->user->hasPermission('modify', 'extension/module/retailcrm_sync')) {
-            return new Action('error/permission');
-        }
+        if (!$this->checkPermission()) return;
 
-        // Подключаем обёртку API retailCRM из модуля
-        require_once(DIR_SYSTEM . 'library/retailcrm/retailcrm.php');
+        $this->initRetailcrmClient();
+        $lastId = (int)($this->settings['module_retailcrm_history_since_id'] ?? 0);
 
-        // Загружаем настройки модуля retailCRM
-        $this->load->model('setting/setting');
-        $settings = $this->model_setting_setting->getSetting('module_retailcrm');
-
-        $api_url = isset($settings['module_retailcrm_url']) ? $settings['module_retailcrm_url'] : '';
-        $api_key = isset($settings['module_retailcrm_apikey']) ? $settings['module_retailcrm_apikey'] : '';
-        $api_version = 'v5';
-
-        if (!$api_url || !$api_key) {
-            exit('RetailCRM: не заданы URL или API ключ');
-        }
-
-        // Инициализация API-клиента
-        $client = new RetailcrmProxy($api_url, $api_key, $api_version);
-
-        // Получаем последнее значение history_id из настроек
-        $lastId = isset($settings['module_retailcrm_history_since_id']) ? (int)$settings['module_retailcrm_history_since_id'] : 0;
-
-        $response = $client->customersHistory([], null, [
-            'sinceId' => $lastId
-        ]);
-        // echo '<pre>';
-        // print_r($response);
-        // echo '</pre>';
-        // exit;       
-
+        // Берём изменения клиентов из retailCRM
+        $response = $this->client->customersHistory([], null, ['sinceId' => $lastId]);
         if (!$response->isSuccessful()) {
             exit('Ошибка API: ' . $response->getStatusCode());
         }
@@ -44,101 +21,39 @@ class ControllerExtensionModuleRetailcrmSync extends Controller {
         $history = $response->offsetGet('history');
         $maxId = $lastId;
 
-        $this->load->model('customer/customer');
-
         foreach ($history as $record) {
-            if (!isset($record['customer']['externalId'])) {
-                continue; // пропускаем, если нет ID
-            }
-        
+            // Пропускаем, если нет externalId
+            if (empty($record['customer']['externalId'])) continue;
+
             $externalId = (int)$record['customer']['externalId'];
             $field = $record['field'] ?? '';
             $newValue = $record['newValue'] ?? '';
-        
-            // Поддерживаемые поля для обновления
-            $allowedFields = ['first_name', 'last_name', 'email', 'phones', 'manager_comment', 'kids_count'];
-        
-            if (!in_array($field, $allowedFields)) {
-                continue; // поле не обрабатываем
-            }
-        
-            // Преобразуем имя поля под opencart
-            $updateData = [];
-        
-            switch ($field) {
-                case 'first_name':
-                    $updateData['firstname'] = $newValue;
-                    break;
-                case 'last_name':
-                    $updateData['lastname'] = $newValue;
-                    break;
-                case 'email':
-                    $updateData['email'] = $newValue;
-                    break;
-                case 'phones':
-                    if (is_array($newValue)) {
-                        $updateData['telephone'] = $newValue[0]['number'] ?? '';
-                    } else {
-                        $updateData['telephone'] = $newValue;
-                    }
-                    break;
-                case 'manager_comment':
-                    $updateData['custom_field_comment'] = $newValue;
-                    break;
-                case 'kids_count':
-                    $updateData['custom_field_kids'] = $newValue;
-                    break;
-            }
-        
-            // Формируем UPDATE только из существующих значений
+
+            // Преобразуем поле из CRM -> поле в OpenCart
+            $updateData = $this->mapCustomerField($field, $newValue);
             if (!empty($updateData)) {
-                $fields = [];
-        
-                foreach ($updateData as $key => $val) {
-                    $fields[] = "`" . $this->db->escape($key) . "` = '" . $this->db->escape($val) . "'";
-                }
-        
-                if (!empty($fields)) {
-                    $sql = "UPDATE " . DB_PREFIX . "customer SET " . implode(', ', $fields) . " WHERE customer_id = " . (int)$externalId;
-                    $this->db->query($sql);
-                }
+                $this->updateEntity(DB_PREFIX . 'customer', 'customer_id', $externalId, $updateData);
             }
-        
-            // Обновляем maxId
+
+            // Следим за максимальным ID истории
             if ($record['id'] > $maxId) {
                 $maxId = $record['id'];
             }
         }
-        // Обновим последний ID
-        $settings['module_retailcrm_history_since_id'] = $maxId;
-        $this->model_setting_setting->editSetting('module_retailcrm', $settings);
 
+        // Обновляем в настройках последний ID
+        $this->updateSinceId('module_retailcrm_history_since_id', $maxId);
         echo 'Синхронизация завершена. Последний ID: ' . $maxId;
     }
 
+    // Синхронизация заказов (для delivery_date, track_number (юзаю delivery_address.region))
     public function syncOrders() {
-        if (!$this->user->hasPermission('modify', 'extension/module/retailcrm_sync')) {
-            return new Action('error/permission');
-        }
+        if (!$this->checkPermission()) return;
 
-        require_once(DIR_SYSTEM . 'library/retailcrm/retailcrm.php');
+        $this->initRetailcrmClient();
+        $lastId = (int)($this->settings['module_retailcrm_orders_history_since_id'] ?? 0);
 
-        $this->load->model('setting/setting');
-        $settings = $this->model_setting_setting->getSetting('module_retailcrm');
-
-        $api_url = $settings['module_retailcrm_url'] ?? '';
-        $api_key = $settings['module_retailcrm_apikey'] ?? '';
-        $api_version = 'v5';
-
-        if (!$api_url || !$api_key) {
-            exit('RetailCRM: не заданы URL или API ключ');
-        }
-
-        $client = new RetailcrmProxy($api_url, $api_key, $api_version);
-        $lastId = (int)($settings['module_retailcrm_orders_history_since_id'] ?? 0);
-
-        $response = $client->ordersHistory([], null, ['sinceId' => $lastId]);
-
+        $response = $this->client->ordersHistory([], null, ['sinceId' => $lastId]);
         if (!$response->isSuccessful()) {
             exit('Ошибка API: ' . $response->getStatusCode());
         }
@@ -147,24 +62,19 @@ class ControllerExtensionModuleRetailcrmSync extends Controller {
         $maxId = $lastId;
 
         foreach ($history as $record) {
-            if (!isset($record['order']['externalId'])) {
-                continue;
-            }
+            if (empty($record['order']['externalId'])) continue;
 
             $externalId = (int)$record['order']['externalId'];
             $field = $record['field'] ?? '';
             $newValue = $record['newValue'] ?? '';
-            $orderData = $record['order'] ?? [];
-            $commentNote = '';
 
-            // вместо track_number, т.к. не нашел поле в retailcrm, беру delivery_address.region
+            // Пока поддержка двух полей: delivery_date и delivery_address.region (как track_number)
             if ($field === 'delivery_date' || $field === 'delivery_address.region') {
-                if ($field === 'delivery_address.region') {
-                    $field = 'track_number';
-                }
-                $sql = "UPDATE `" . DB_PREFIX . "order` SET $field = '" . $this->db->escape($newValue) . "' WHERE order_id = " . (int)$externalId;
-                print_r($sql);
-                $this->db->query($sql);
+                $mappedField = ($field === 'delivery_address.region') ? 'track_number' : $field;
+
+                $this->updateEntity(DB_PREFIX . 'order', 'order_id', $externalId, [
+                    $mappedField => $newValue
+                ]);
 
                 if ($record['id'] > $maxId) {
                     $maxId = $record['id'];
@@ -172,9 +82,73 @@ class ControllerExtensionModuleRetailcrmSync extends Controller {
             }
         }
 
-        $settings['module_retailcrm_orders_history_since_id'] = $maxId;
-        $this->model_setting_setting->editSetting('module_retailcrm', $settings);
-
+        $this->updateSinceId('module_retailcrm_orders_history_since_id', $maxId);
         echo 'Синхронизация заказов завершена. Последний ID: ' . $maxId;
+    }
+
+    // Проверка прав доступа к контроллеру
+    private function checkPermission() {
+        if (!$this->user->hasPermission('modify', 'extension/module/retailcrm_sync')) {
+            new Action('error/permission');
+            return false;
+        }
+        return true;
+    }
+
+    // Инициализация клиента retailCRM + загрузка настроек
+    private function initRetailcrmClient() {
+        require_once(DIR_SYSTEM . 'library/retailcrm/retailcrm.php');
+
+        $this->load->model('setting/setting');
+        $this->settings = $this->model_setting_setting->getSetting('module_retailcrm');
+
+        $api_url = $this->settings['module_retailcrm_url'] ?? '';
+        $api_key = $this->settings['module_retailcrm_apikey'] ?? '';
+        $api_version = 'v5';
+
+        if (!$api_url || !$api_key) {
+            exit('RetailCRM: не заданы URL или API ключ');
+        }
+
+        $this->client = new RetailcrmProxy($api_url, $api_key, $api_version);
+    }
+
+    // Обновление значения sinceId в настройках
+    private function updateSinceId(string $key, int $value) {
+        $this->settings[$key] = $value;
+        $this->model_setting_setting->editSetting('module_retailcrm', $this->settings);
+    }
+
+    // Универсальный метод обновления строки в БД
+    private function updateEntity(string $table, string $idField, int $id, array $data) {
+        if (empty($data)) return;
+
+        $fields = [];
+        foreach ($data as $key => $val) {
+            $fields[] = "`" . $this->db->escape($key) . "` = '" . $this->db->escape($val) . "'";
+        }
+
+        $sql = "UPDATE `" . $table . "` SET " . implode(', ', $fields) . " WHERE `" . $idField . "` = " . (int)$id;
+        $this->db->query($sql);
+    }
+
+    // Преобразуем поля клиента из retailCRM в поля OpenCart
+    private function mapCustomerField(string $field, $value): array {
+        switch ($field) {
+            case 'first_name':
+                return ['firstname' => $value];
+            case 'last_name':
+                return ['lastname' => $value];
+            case 'email':
+                return ['email' => $value];
+            case 'phones':
+                return ['telephone' => is_array($value) ? ($value[0]['number'] ?? '') : $value];
+            case 'manager_comment':
+                return ['custom_field_comment' => $value];
+            case 'kids_count':
+                return ['custom_field_kids' => $value];
+            default:
+                return [];
+        }
     }
 }
