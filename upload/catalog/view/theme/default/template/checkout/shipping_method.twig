@@ -26,6 +26,16 @@
 <p>
   <textarea name="comment" rows="8" class="form-control">{{ comment }}</textarea>
 </p>
+
+<div class="form-group required">
+    <label for="input-delivery-date" class="control-label">Delivery Date</label>
+    <input type="date" name="delivery_date" value="" placeholder="Delivery Date" id="input-delivery-date" class="form-control" />
+</div>
+
+<div class="form-group">
+    <label><input type="checkbox" name="need_call" id="input-need-call" />Need Call</label>
+</div>
+
 <div class="buttons">
   <div class="pull-right">
     <input type="button" value="{{ button_continue }}" id="button-shipping-method" data-loading-text="{{ text_loading }}" class="btn btn-primary" />
