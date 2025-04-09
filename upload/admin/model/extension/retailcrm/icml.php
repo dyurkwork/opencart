@@ -210,6 +210,13 @@ class ModelExtensionRetailcrmIcml extends Model
                  */
                 $catalog->appendChild($this->dd->createElement('productName'))
                     ->appendChild($this->dd->createTextNode($product['name']));
+
+                if (!empty($product['description'])) {
+                    $descriptionText = strip_tags(html_entity_decode($product['description'], ENT_QUOTES, 'UTF-8'));
+                    $catalog->appendChild($this->dd->createElement('description'))
+                        ->appendChild($this->dd->createTextNode($descriptionText));
+                }
+
                 if (!empty($options)) {
                     $optionsString = [];
                     foreach($options as $option) {
@@ -279,6 +286,12 @@ class ModelExtensionRetailcrmIcml extends Model
                         $productWidth,
                         $productHeight
                     );
+
+                    $volume = $productLength * $productWidth * $productHeight;
+                    $catalog->appendChild($this->dd->createElement('volume'))
+                        ->appendChild($this->dd->createTextNode($volume));
+                    file_put_contents(DIR_LOGS . 'retailcrm_icml.log', 
+                        print_r("длина; $productLength ширина;  $productWidth высота; $productHeight " , true));
 
                     $catalog->appendChild($this->dd->createElement('dimensions'))
                         ->appendChild($this->dd->createTextNode($dimensions));
