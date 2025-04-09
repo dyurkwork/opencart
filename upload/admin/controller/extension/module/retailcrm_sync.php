@@ -115,4 +115,66 @@ class ControllerExtensionModuleRetailcrmSync extends Controller {
 
         echo 'Синхронизация завершена. Последний ID: ' . $maxId;
     }
+
+    public function syncOrders() {
+        if (!$this->user->hasPermission('modify', 'extension/module/retailcrm_sync')) {
+            return new Action('error/permission');
+        }
+
+        require_once(DIR_SYSTEM . 'library/retailcrm/retailcrm.php');
+
+        $this->load->model('setting/setting');
+        $settings = $this->model_setting_setting->getSetting('module_retailcrm');
+
+        $api_url = $settings['module_retailcrm_url'] ?? '';
+        $api_key = $settings['module_retailcrm_apikey'] ?? '';
+        $api_version = 'v5';
+
+        if (!$api_url || !$api_key) {
+            exit('RetailCRM: не заданы URL или API ключ');
+        }
+
+        $client = new RetailcrmProxy($api_url, $api_key, $api_version);
+        $lastId = (int)($settings['module_retailcrm_orders_history_since_id'] ?? 0);
+
+        $response = $client->ordersHistory([], null, ['sinceId' => $lastId]);
+
+        if (!$response->isSuccessful()) {
+            exit('Ошибка API: ' . $response->getStatusCode());
+        }
+
+        $history = $response['history'];
+        $maxId = $lastId;
+
+        foreach ($history as $record) {
+            if (!isset($record['order']['externalId'])) {
+                continue;
+            }
+
+            $externalId = (int)$record['order']['externalId'];
+            $field = $record['field'] ?? '';
+            $newValue = $record['newValue'] ?? '';
+            $orderData = $record['order'] ?? [];
+            $commentNote = '';
+
+            // вместо track_number, т.к. не нашел поле в retailcrm, беру delivery_address.region
+            if ($field === 'delivery_date' || $field === 'delivery_address.region') {
+                if ($field === 'delivery_address.region') {
+                    $field = 'track_number';
+                }
+                $sql = "UPDATE `" . DB_PREFIX . "order` SET $field = '" . $this->db->escape($newValue) . "' WHERE order_id = " . (int)$externalId;
+                print_r($sql);
+                $this->db->query($sql);
+
+                if ($record['id'] > $maxId) {
+                    $maxId = $record['id'];
+                }
+            }
+        }
+
+        $settings['module_retailcrm_orders_history_since_id'] = $maxId;
+        $this->model_setting_setting->editSetting('module_retailcrm', $settings);
+
+        echo 'Синхронизация заказов завершена. Последний ID: ' . $maxId;
+    }
 }
