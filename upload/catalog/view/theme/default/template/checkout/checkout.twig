@@ -791,7 +791,7 @@ $(document).delegate('#button-payment-method', 'click', function() {
                     dataType: 'html',
                     type: 'post',
                     data: {
-                        delivery_date: $('#input-delivery-date').val(),
+                        delivery_date: $('#input-delivery-datetime').val(),
                         need_call: $('#input-need-call').is(':checked') ? 1 : 0
                     },
                     complete: function() {
