@@ -96,6 +96,14 @@ class ControllerCheckoutConfirm extends Controller {
 
 			array_multisort($sort_order, SORT_ASC, $totals);
 
+			if (isset($this->request->post['delivery_date'])) {
+				$this->session->data['delivery_date'] = $this->request->post['delivery_date'];
+			}
+			
+			if (isset($this->request->post['need_call'])) {
+				$this->session->data['need_call'] = (int)$this->request->post['need_call'];
+			}			
+
 			$order_data['totals'] = $totals;
 
 			$this->load->language('checkout/checkout');

@@ -49,6 +49,17 @@ class OrderManager {
             }
         }
 
+        if (isset($order_data['delivery_date'])) {
+            $order['delivery']['date'] = date('Y-m-d', strtotime($order_data['delivery_date']));
+
+            // Должно быть судя по доке так, но чет не пишет время ни в какую, пока забил на это
+            $order['delivery']['address']['deliveryTime'] = date('H:i', strtotime($order_data['delivery_date']));
+        }
+        
+        if (isset($order_data['need_call'])) {
+            $order['customFields']['need_call'] = (int)$order_data['need_call'];
+        }
+        file_put_contents(DIR_LOGS . 'retailcrm_order_data.log', print_r($order, true));
         $order['contragent']['contragentType'] = 'individual';
         $this->handleCorporate($order, $order_data);
 
